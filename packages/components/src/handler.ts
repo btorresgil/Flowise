@@ -407,6 +407,9 @@ export class AnalyticHandler {
                     name,
                     sessionId: this.options.chatId,
                     metadata: { tags: ['openai-assistant'] },
+                    input: {
+                        text: input
+                    },
                     ...this.nodeData?.inputs?.analytics?.langFuse
                 })
             } else {
@@ -461,9 +464,15 @@ export class AnalyticHandler {
         }
 
         if (Object.prototype.hasOwnProperty.call(this.handlers, 'langFuse')) {
+            const trace: LangfuseTraceClient | undefined = this.handlers['langFuse'].trace[returnIds['langFuse'].trace]
             const span: LangfuseSpanClient | undefined = this.handlers['langFuse'].span[returnIds['langFuse'].span]
             if (span) {
                 span.end({
+                    output
+                })
+            }
+            if (trace) {
+                trace.update({
                     output
                 })
                 if (shutdown) {
