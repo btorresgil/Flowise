@@ -301,7 +301,7 @@ class OpenAIAssistant_Agents implements INode {
                                     if (!tool) continue
 
                                     // Start tool analytics
-                                    const toolIds = await analyticHandlers.onToolStart(tool.name, actions[i].toolInput, parentIds)
+                                    const toolIds = await analyticHandlers.onToolStart(tool.name, actions[i].toolInput, llmIds)
                                     if (options.socketIO && options.socketIOClientId)
                                         options.socketIO.to(options.socketIOClientId).emit('tool', tool.name)
 
