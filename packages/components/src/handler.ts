@@ -407,9 +407,7 @@ export class AnalyticHandler {
                     name,
                     sessionId: this.options.chatId,
                     metadata: { tags: ['openai-assistant'] },
-                    input: {
-                        text: input
-                    },
+                    input: input,
                     ...this.nodeData?.inputs?.analytics?.langFuse
                 })
             } else {
@@ -450,7 +448,7 @@ export class AnalyticHandler {
         return returnIds
     }
 
-    async onChainEnd(returnIds: ICommonObject, output: string | object, shutdown = false) {
+    async onChainEnd(returnIds: ICommonObject, output: string | object, shutdown = false, outputText?: string) {
         if (Object.prototype.hasOwnProperty.call(this.handlers, 'langSmith')) {
             const chainRun: RunTree | undefined = this.handlers['langSmith'].chainRun[returnIds['langSmith'].chainRun]
             if (chainRun) {
@@ -473,7 +471,7 @@ export class AnalyticHandler {
             }
             if (trace) {
                 trace.update({
-                    output
+                    output: outputText
                 })
                 if (shutdown) {
                     const langfuse: Langfuse = this.handlers['langFuse'].client
@@ -510,11 +508,15 @@ export class AnalyticHandler {
 
         if (Object.prototype.hasOwnProperty.call(this.handlers, 'langFuse')) {
             const span: LangfuseSpanClient | undefined = this.handlers['langFuse'].span[returnIds['langFuse'].span]
+            const errorMessage =
+                typeof error === 'string' ? error : 'message' in error && typeof error.message === 'string' ? error.message : 'error'
             if (span) {
                 span.end({
                     output: {
                         error
-                    }
+                    },
+                    statusMessage: errorMessage,
+                    level: 'ERROR'
                 })
                 if (shutdown) {
                     const langfuse: Langfuse = this.handlers['langFuse'].client
@@ -536,7 +538,7 @@ export class AnalyticHandler {
         }
     }
 
-    async onLLMStart(name: string, input: string, parentIds: ICommonObject) {
+    async onLLMStart(name: string, input: string, parentIds: ICommonObject, info: { model?: string; usage?: object } = {}) {
         const returnIds: ICommonObject = {
             langSmith: {},
             langFuse: {},
@@ -564,7 +566,13 @@ export class AnalyticHandler {
             if (trace) {
                 const generation = trace.generation({
                     name,
-                    input: input
+                    input: [
+                        {
+                            role: 'user',
+                            content: input
+                        }
+                    ],
+                    ...info
                 })
                 this.handlers['langFuse'].generation = { [generation.id]: generation }
                 returnIds['langFuse'].generation = generation.id
@@ -592,7 +600,7 @@ export class AnalyticHandler {
         return returnIds
     }
 
-    async onLLMEnd(returnIds: ICommonObject, output: string) {
+    async onLLMEnd(returnIds: ICommonObject, output: string, info: { model?: string; usage?: object } = {}) {
         if (Object.prototype.hasOwnProperty.call(this.handlers, 'langSmith')) {
             const llmRun: RunTree | undefined = this.handlers['langSmith'].llmRun[returnIds['langSmith'].llmRun]
             if (llmRun) {
@@ -609,7 +617,8 @@ export class AnalyticHandler {
             const generation: LangfuseGenerationClient | undefined = this.handlers['langFuse'].generation[returnIds['langFuse'].generation]
             if (generation) {
                 generation.end({
-                    output: output
+                    output: output,
+                    ...info
                 })
             }
         }
@@ -627,7 +636,7 @@ export class AnalyticHandler {
         }
     }
 
-    async onLLMError(returnIds: ICommonObject, error: string | object) {
+    async onLLMError(returnIds: ICommonObject, error: string | object, info: { model?: string; usage?: object } = {}) {
         if (Object.prototype.hasOwnProperty.call(this.handlers, 'langSmith')) {
             const llmRun: RunTree | undefined = this.handlers['langSmith'].llmRun[returnIds['langSmith'].llmRun]
             if (llmRun) {
@@ -642,9 +651,14 @@ export class AnalyticHandler {
 
         if (Object.prototype.hasOwnProperty.call(this.handlers, 'langFuse')) {
             const generation: LangfuseGenerationClient | undefined = this.handlers['langFuse'].generation[returnIds['langFuse'].generation]
+            const errorMessage =
+                typeof error === 'string' ? error : 'message' in error && typeof error.message === 'string' ? error.message : 'error'
             if (generation) {
                 generation.end({
-                    output: error
+                    output: error,
+                    statusMessage: errorMessage,
+                    level: 'ERROR',
+                    ...info
                 })
             }
         }
@@ -768,9 +782,13 @@ export class AnalyticHandler {
 
         if (Object.prototype.hasOwnProperty.call(this.handlers, 'langFuse')) {
             const toolSpan: LangfuseSpanClient | undefined = this.handlers['langFuse'].toolSpan[returnIds['langFuse'].toolSpan]
+            const errorMessage =
+                typeof error === 'string' ? error : 'message' in error && typeof error.message === 'string' ? error.message : 'error'
             if (toolSpan) {
                 toolSpan.end({
-                    output: error
+                    output: error,
+                    statusMessage: errorMessage,
+                    level: 'ERROR'
                 })
             }
         }

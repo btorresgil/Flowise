@@ -9,6 +9,7 @@ import { ICommonObject, IDatabaseEntity, IMessage, INodeData, IVariable } from '
 import { AES, enc } from 'crypto-js'
 import { ChatMessageHistory } from 'langchain/memory'
 import { AIMessage, HumanMessage, BaseMessage } from 'langchain/schema'
+import type { ZodString, ZodNumber, ZodBoolean } from 'zod'
 
 export const numberOrExpressionRegex = '^(\\d+\\.?\\d*|{{.*}})$' //return true if string consists only numbers OR expression {{}}
 export const notEmptyRegex = '(.|\\s)*\\S(.|\\s)*' //return true if string is not empty or blank
@@ -645,16 +646,17 @@ export const convertSchemaToZod = (schema: string | object): ICommonObject => {
         const parsedSchema = typeof schema === 'string' ? JSON.parse(schema) : schema
         const zodObj: ICommonObject = {}
         for (const sch of parsedSchema) {
+            let zodType: (options?: { required_error?: string }) => ZodString | ZodNumber | ZodBoolean = z.string
             if (sch.type === 'string') {
-                if (sch.required) z.string({ required_error: `${sch.property} required` }).describe(sch.description)
-                zodObj[sch.property] = z.string().describe(sch.description)
+                zodType = z.string
             } else if (sch.type === 'number') {
-                if (sch.required) z.number({ required_error: `${sch.property} required` }).describe(sch.description)
-                zodObj[sch.property] = z.number().describe(sch.description)
+                zodType = z.number
             } else if (sch.type === 'boolean') {
-                if (sch.required) z.boolean({ required_error: `${sch.property} required` }).describe(sch.description)
-                zodObj[sch.property] = z.boolean().describe(sch.description)
+                zodType = z.boolean
             }
+            zodObj[sch.property] = !!sch.required
+                ? zodType({ required_error: `${sch.property} required` }).describe(sch.description)
+                : zodType().describe(sch.description).nullish()
         }
         return zodObj
     } catch (e) {

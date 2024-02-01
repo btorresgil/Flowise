@@ -258,12 +258,14 @@ class OpenAIAssistant_Agents implements INode {
             })
 
             // Run assistant thread
-            const llmIds = await analyticHandlers.onLLMStart('ChatOpenAI', input, parentIds)
+            const llmIds = await analyticHandlers.onLLMStart('ChatOpenAI', input, parentIds, { model: assistantDetails.model })
             const runThread = await openai.beta.threads.runs.create(threadId, {
                 assistant_id: retrievedAssistant.id
             })
 
             const usedTools: IUsedTool[] = []
+
+            let usage: OpenAI.Beta.Threads.Runs.Run.Usage | undefined
 
             const promise = (threadId: string, runId: string) => {
                 return new Promise((resolve, reject) => {
@@ -272,6 +274,7 @@ class OpenAIAssistant_Agents implements INode {
                         const state = run.status
                         if (state === 'completed') {
                             clearInterval(timeout)
+                            usage = run.usage ?? undefined
                             resolve(state)
                         } else if (state === 'requires_action') {
                             if (run.required_action?.submit_tool_outputs.tool_calls) {
@@ -319,7 +322,7 @@ class OpenAIAssistant_Agents implements INode {
                                             toolOutput
                                         })
                                     } catch (e) {
-                                        await analyticHandlers.onToolEnd(toolIds, e)
+                                        await analyticHandlers.onToolError(toolIds, e)
                                         console.error('Error executing tool', e)
                                         clearInterval(timeout)
                                         reject(
@@ -331,12 +334,12 @@ class OpenAIAssistant_Agents implements INode {
                                     }
                                 }
 
-                                const newRun = await openai.beta.threads.runs.retrieve(threadId, runId)
+                                let newRun = await openai.beta.threads.runs.retrieve(threadId, runId)
                                 const newStatus = newRun?.status
 
                                 try {
                                     if (submitToolOutputs.length && newStatus === 'requires_action') {
-                                        await openai.beta.threads.runs.submitToolOutputs(threadId, runId, {
+                                        newRun = await openai.beta.threads.runs.submitToolOutputs(threadId, runId, {
                                             tool_outputs: submitToolOutputs
                                         })
                                         resolve(state)
@@ -346,11 +349,15 @@ class OpenAIAssistant_Agents implements INode {
                                     }
                                 } catch (e) {
                                     clearInterval(timeout)
+                                    await analyticHandlers.onLLMError(llmIds, run.last_error || 'unknown error', {
+                                        usage: run.usage ?? undefined
+                                    })
                                     reject(new Error(`Error submitting tool outputs: ${state}, Thread ID: ${threadId}, Run ID: ${runId}`))
                                 }
                             }
                         } else if (state === 'cancelled' || state === 'expired' || state === 'failed') {
                             clearInterval(timeout)
+                            await analyticHandlers.onLLMError(llmIds, run.last_error || 'unknown error', { usage: run.usage ?? undefined })
                             reject(
                                 new Error(`Error processing thread: ${state}, Thread ID: ${threadId}, Run ID: ${runId}, Status: ${state}`)
                             )
@@ -473,8 +480,8 @@ class OpenAIAssistant_Agents implements INode {
             let llmOutput = returnVal.replace(imageRegex, '')
             llmOutput = llmOutput.replace('<br/>', '')
 
-            await analyticHandlers.onLLMEnd(llmIds, llmOutput)
-            await analyticHandlers.onChainEnd(parentIds, messageData, true)
+            await analyticHandlers.onLLMEnd(llmIds, llmOutput, { usage })
+            await analyticHandlers.onChainEnd(parentIds, messageData, true, llmOutput)
 
             return {
                 text: returnVal,
