@@ -507,6 +507,7 @@ export class AnalyticHandler {
         }
 
         if (Object.prototype.hasOwnProperty.call(this.handlers, 'langFuse')) {
+            const trace: LangfuseTraceClient | undefined = this.handlers['langFuse'].trace[returnIds['langFuse'].trace]
             const span: LangfuseSpanClient | undefined = this.handlers['langFuse'].span[returnIds['langFuse'].span]
             const errorMessage =
                 typeof error === 'string' ? error : 'message' in error && typeof error.message === 'string' ? error.message : 'error'
@@ -516,13 +517,17 @@ export class AnalyticHandler {
                         error
                     },
                     statusMessage: errorMessage,
-                    level: 'ERROR',
+                    level: 'ERROR'
+                })
+            }
+            if (trace) {
+                trace.update({
                     metadata: { error: true }
                 })
-                if (shutdown) {
-                    const langfuse: Langfuse = this.handlers['langFuse'].client
-                    await langfuse.shutdownAsync()
-                }
+            }
+            if (shutdown && (trace || span)) {
+                const langfuse: Langfuse = this.handlers['langFuse'].client
+                await langfuse.shutdownAsync()
             }
         }
 
