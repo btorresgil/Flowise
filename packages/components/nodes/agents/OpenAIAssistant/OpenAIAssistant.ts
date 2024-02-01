@@ -258,7 +258,7 @@ class OpenAIAssistant_Agents implements INode {
             })
 
             // Run assistant thread
-            const llmIds = await analyticHandlers.onLLMStart('ChatOpenAI', input, parentIds, { model: assistantDetails.model })
+            let llmIds = await analyticHandlers.onLLMStart('ChatOpenAI', input, parentIds, { model: assistantDetails.model })
             const runThread = await openai.beta.threads.runs.create(threadId, {
                 assistant_id: retrievedAssistant.id
             })
@@ -267,7 +267,7 @@ class OpenAIAssistant_Agents implements INode {
 
             let usage: OpenAI.Beta.Threads.Runs.Run.Usage | undefined
 
-            const promise = (threadId: string, runId: string) => {
+            const promise = (threadId: string, runId: string, llmIds: ICommonObject) => {
                 return new Promise((resolve, reject) => {
                     const timeout = setInterval(async () => {
                         const run = await openai.beta.threads.runs.retrieve(threadId, runId)
@@ -323,6 +323,7 @@ class OpenAIAssistant_Agents implements INode {
                                         })
                                     } catch (e) {
                                         await analyticHandlers.onToolError(toolIds, e)
+                                        await analyticHandlers.onLLMEnd(llmIds, '', { usage: run.usage ?? undefined })
                                         console.error('Error executing tool', e)
                                         clearInterval(timeout)
                                         reject(
@@ -349,7 +350,6 @@ class OpenAIAssistant_Agents implements INode {
                                     }
                                 } catch (e) {
                                     clearInterval(timeout)
-                                    await analyticHandlers.onToolError(llmIds, e)
                                     await analyticHandlers.onLLMError(llmIds, run.last_error || e, {
                                         usage: run.usage ?? undefined
                                     })
@@ -358,7 +358,7 @@ class OpenAIAssistant_Agents implements INode {
                             }
                         } else if (state === 'cancelled' || state === 'expired' || state === 'failed') {
                             clearInterval(timeout)
-                            await analyticHandlers.onLLMError(llmIds, `status: ${state} - ` + (run.last_error || 'unknown error'), {
+                            await analyticHandlers.onLLMError(llmIds, `status: ${state}` + (run.last_error ? ` - ${run.last_error}` : ''), {
                                 usage: run.usage ?? undefined
                             })
                             reject(
@@ -371,20 +371,21 @@ class OpenAIAssistant_Agents implements INode {
 
             // Polling run status
             let runThreadId = runThread.id
-            let state = await promise(threadId, runThread.id)
+            let state = await promise(threadId, runThread.id, llmIds)
             while (state === 'requires_action') {
-                state = await promise(threadId, runThread.id)
+                state = await promise(threadId, runThread.id, llmIds)
             }
 
             let retries = 3
             while (state === 'requires_action_retry') {
                 if (retries > 0) {
                     retries -= 1
+                    llmIds = await analyticHandlers.onLLMStart('ChatOpenAI', input, parentIds, { model: assistantDetails.model })
                     const newRunThread = await openai.beta.threads.runs.create(threadId, {
                         assistant_id: retrievedAssistant.id
                     })
                     runThreadId = newRunThread.id
-                    state = await promise(threadId, newRunThread.id)
+                    state = await promise(threadId, newRunThread.id, llmIds)
                 } else {
                     const errMsg = `Error processing thread: ${state}, Thread ID: ${threadId}`
                     await analyticHandlers.onChainError(parentIds, errMsg)
@@ -484,14 +485,17 @@ class OpenAIAssistant_Agents implements INode {
             llmOutput = llmOutput.replace('<br/>', '')
 
             await analyticHandlers.onLLMEnd(llmIds, llmOutput, { usage })
-            await analyticHandlers.onChainEnd(parentIds, messageData, true, llmOutput)
 
-            return {
+            const result = {
                 text: returnVal,
                 usedTools,
                 fileAnnotations,
                 assistant: { assistantId: openAIAssistantId, threadId, runId: runThreadId, messages: messageData }
             }
+
+            await analyticHandlers.onChainEnd(parentIds, result, true, llmOutput)
+
+            return result
         } catch (error) {
             await analyticHandlers.onChainError(parentIds, error, true)
             throw new Error(error)

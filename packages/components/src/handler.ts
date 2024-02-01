@@ -562,7 +562,7 @@ export class AnalyticHandler {
         }
 
         if (Object.prototype.hasOwnProperty.call(this.handlers, 'langFuse')) {
-            const span: LangfuseTraceClient | undefined = this.handlers['langFuse'].span[parentIds['langFuse'].span]
+            const span: LangfuseSpanClient | undefined = this.handlers['langFuse'].span[parentIds['langFuse'].span]
             if (span) {
                 const generation = span.generation({
                     name,
@@ -700,9 +700,11 @@ export class AnalyticHandler {
         }
 
         if (Object.prototype.hasOwnProperty.call(this.handlers, 'langFuse')) {
-            const span: LangfuseTraceClient | undefined = this.handlers['langFuse'].span[parentIds['langFuse'].span]
-            if (span) {
-                const toolSpan = span.span({
+            const generation: LangfuseGenerationClient | undefined = this.handlers['langFuse'].generation[parentIds['langFuse'].generation]
+            const span: LangfuseSpanClient | undefined = this.handlers['langFuse'].span[parentIds['langFuse'].span]
+            const base = generation || span
+            if (base) {
+                const toolSpan = base.span({
                     name,
                     input
                 })
