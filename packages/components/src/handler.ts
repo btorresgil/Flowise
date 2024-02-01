@@ -471,7 +471,7 @@ export class AnalyticHandler {
             }
             if (trace) {
                 trace.update({
-                    output: outputText
+                    output: outputText || output
                 })
                 if (shutdown) {
                     const langfuse: Langfuse = this.handlers['langFuse'].client
@@ -562,9 +562,9 @@ export class AnalyticHandler {
         }
 
         if (Object.prototype.hasOwnProperty.call(this.handlers, 'langFuse')) {
-            const trace: LangfuseTraceClient | undefined = this.handlers['langFuse'].trace[parentIds['langFuse'].trace]
-            if (trace) {
-                const generation = trace.generation({
+            const span: LangfuseTraceClient | undefined = this.handlers['langFuse'].span[parentIds['langFuse'].span]
+            if (span) {
+                const generation = span.generation({
                     name,
                     input: [
                         {
@@ -700,9 +700,9 @@ export class AnalyticHandler {
         }
 
         if (Object.prototype.hasOwnProperty.call(this.handlers, 'langFuse')) {
-            const trace: LangfuseTraceClient | undefined = this.handlers['langFuse'].trace[parentIds['langFuse'].trace]
-            if (trace) {
-                const toolSpan = trace.span({
+            const span: LangfuseTraceClient | undefined = this.handlers['langFuse'].span[parentIds['langFuse'].span]
+            if (span) {
+                const toolSpan = span.span({
                     name,
                     input
                 })

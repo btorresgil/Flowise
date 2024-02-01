@@ -349,7 +349,8 @@ class OpenAIAssistant_Agents implements INode {
                                     }
                                 } catch (e) {
                                     clearInterval(timeout)
-                                    await analyticHandlers.onLLMError(llmIds, run.last_error || 'unknown error', {
+                                    await analyticHandlers.onToolError(llmIds, e)
+                                    await analyticHandlers.onLLMError(llmIds, run.last_error || e, {
                                         usage: run.usage ?? undefined
                                     })
                                     reject(new Error(`Error submitting tool outputs: ${state}, Thread ID: ${threadId}, Run ID: ${runId}`))
@@ -357,7 +358,9 @@ class OpenAIAssistant_Agents implements INode {
                             }
                         } else if (state === 'cancelled' || state === 'expired' || state === 'failed') {
                             clearInterval(timeout)
-                            await analyticHandlers.onLLMError(llmIds, run.last_error || 'unknown error', { usage: run.usage ?? undefined })
+                            await analyticHandlers.onLLMError(llmIds, `status: ${state} - ` + (run.last_error || 'unknown error'), {
+                                usage: run.usage ?? undefined
+                            })
                             reject(
                                 new Error(`Error processing thread: ${state}, Thread ID: ${threadId}, Run ID: ${runId}, Status: ${state}`)
                             )
