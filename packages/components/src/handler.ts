@@ -516,7 +516,8 @@ export class AnalyticHandler {
                         error
                     },
                     statusMessage: errorMessage,
-                    level: 'ERROR'
+                    level: 'ERROR',
+                    metadata: { error: true }
                 })
                 if (shutdown) {
                     const langfuse: Langfuse = this.handlers['langFuse'].client
