@@ -1,19 +1,30 @@
-import { BaseLanguageModel } from 'langchain/base_language'
-import { ConversationalRetrievalQAChain } from 'langchain/chains'
-import { BaseRetriever } from 'langchain/schema/retriever'
-import { BufferMemoryInput } from 'langchain/memory'
-import { PromptTemplate } from 'langchain/prompts'
-import { QA_TEMPLATE, REPHRASE_TEMPLATE, RESPONSE_TEMPLATE } from './prompts'
-import { Runnable, RunnableSequence, RunnableMap, RunnableBranch, RunnableLambda } from 'langchain/schema/runnable'
-import { BaseMessage, HumanMessage, AIMessage } from 'langchain/schema'
-import { StringOutputParser } from 'langchain/schema/output_parser'
-import type { Document } from 'langchain/document'
-import { ChatPromptTemplate, MessagesPlaceholder } from 'langchain/prompts'
 import { applyPatch } from 'fast-json-patch'
-import { convertBaseMessagetoIMessage, getBaseClasses } from '../../../src/utils'
-import { ConsoleCallbackHandler, additionalCallbacks } from '../../../src/handler'
-import { FlowiseMemory, ICommonObject, IMessage, INode, INodeData, INodeParams, MemoryMethods } from '../../../src/Interface'
+import { DataSource } from 'typeorm'
+import { BaseLanguageModel } from '@langchain/core/language_models/base'
+import { BaseRetriever } from '@langchain/core/retrievers'
+import { PromptTemplate, ChatPromptTemplate, MessagesPlaceholder } from '@langchain/core/prompts'
+import { Runnable, RunnableSequence, RunnableMap, RunnableBranch, RunnableLambda } from '@langchain/core/runnables'
+import { BaseMessage, HumanMessage, AIMessage } from '@langchain/core/messages'
 import { ConsoleCallbackHandler as LCConsoleCallbackHandler } from '@langchain/core/tracers/console'
+import { checkInputs, Moderation, streamResponse } from '../../moderation/Moderation'
+import { formatResponse } from '../../outputparsers/OutputParserHelpers'
+import { StringOutputParser } from '@langchain/core/output_parsers'
+import type { Document } from '@langchain/core/documents'
+import { BufferMemoryInput } from 'langchain/memory'
+import { ConversationalRetrievalQAChain } from 'langchain/chains'
+import { getBaseClasses, mapChatMessageToBaseMessage } from '../../../src/utils'
+import { ConsoleCallbackHandler, additionalCallbacks } from '../../../src/handler'
+import {
+    FlowiseMemory,
+    ICommonObject,
+    IMessage,
+    INode,
+    INodeData,
+    INodeParams,
+    IDatabaseEntity,
+    MemoryMethods
+} from '../../../src/Interface'
+import { QA_TEMPLATE, REPHRASE_TEMPLATE, RESPONSE_TEMPLATE } from './prompts'
 
 type RetrievalChainInput = {
     chat_history: string
@@ -37,7 +48,7 @@ class ConversationalRetrievalQAChain_Chains implements INode {
     constructor(fields?: { sessionId?: string }) {
         this.label = 'Conversational Retrieval QA Chain'
         this.name = 'conversationalRetrievalQAChain'
-        this.version = 2.0
+        this.version = 3.0
         this.type = 'ConversationalRetrievalQAChain'
         this.icon = 'qa.svg'
         this.category = 'Chains'
@@ -88,6 +99,14 @@ class ConversationalRetrievalQAChain_Chains implements INode {
                 additionalParams: true,
                 optional: true,
                 default: RESPONSE_TEMPLATE
+            },
+            {
+                label: 'Input Moderation',
+                description: 'Detect text that could generate harmful output and prevent it from being sent to the language model',
+                name: 'inputModeration',
+                type: 'Moderation',
+                optional: true,
+                list: true
             }
             /** Deprecated
             {
@@ -157,6 +176,10 @@ class ConversationalRetrievalQAChain_Chains implements INode {
         const responsePrompt = nodeData.inputs?.responsePrompt as string
         const returnSourceDocuments = nodeData.inputs?.returnSourceDocuments as boolean
 
+        const appDataSource = options.appDataSource as DataSource
+        const databaseEntities = options.databaseEntities as IDatabaseEntity
+        const chatflowid = options.chatflowid as string
+
         let customResponsePrompt = responsePrompt
         // If the deprecated systemMessagePrompt is still exists
         if (systemMessagePrompt) {
@@ -164,17 +187,30 @@ class ConversationalRetrievalQAChain_Chains implements INode {
         }
 
         let memory: FlowiseMemory | undefined = externalMemory
+        const moderations = nodeData.inputs?.inputModeration as Moderation[]
         if (!memory) {
             memory = new BufferMemory({
                 returnMessages: true,
                 memoryKey: 'chat_history',
-                inputKey: 'input'
+                appDataSource,
+                databaseEntities,
+                chatflowid
             })
         }
 
+        if (moderations && moderations.length > 0) {
+            try {
+                // Use the output of the moderation chain as input for the Conversational Retrieval QA Chain
+                input = await checkInputs(moderations, input)
+            } catch (e) {
+                await new Promise((resolve) => setTimeout(resolve, 500))
+                streamResponse(options.socketIO && options.socketIOClientId, e.message, options.socketIO, options.socketIOClientId)
+                return formatResponse(e.message)
+            }
+        }
         const answerChain = createChain(model, vectorStoreRetriever, rephrasePrompt, customResponsePrompt)
 
-        const history = ((await memory.getChatMessages(this.sessionId, false, options.chatHistory)) as IMessage[]) ?? []
+        const history = ((await memory.getChatMessages(this.sessionId, false)) as IMessage[]) ?? []
 
         const loggerHandler = new ConsoleCallbackHandler(options.logger)
         const additionalCallback = await additionalCallbacks(nodeData, options)
@@ -347,31 +383,59 @@ const createChain = (
     return conversationalQAChain
 }
 
+interface BufferMemoryExtendedInput {
+    appDataSource: DataSource
+    databaseEntities: IDatabaseEntity
+    chatflowid: string
+}
+
 class BufferMemory extends FlowiseMemory implements MemoryMethods {
-    constructor(fields: BufferMemoryInput) {
+    appDataSource: DataSource
+    databaseEntities: IDatabaseEntity
+    chatflowid: string
+
+    constructor(fields: BufferMemoryInput & BufferMemoryExtendedInput) {
         super(fields)
+        this.appDataSource = fields.appDataSource
+        this.databaseEntities = fields.databaseEntities
+        this.chatflowid = fields.chatflowid
     }
 
-    async getChatMessages(_?: string, returnBaseMessages = false, prevHistory: IMessage[] = []): Promise<IMessage[] | BaseMessage[]> {
-        await this.chatHistory.clear()
+    async getChatMessages(overrideSessionId = '', returnBaseMessages = false): Promise<IMessage[] | BaseMessage[]> {
+        if (!overrideSessionId) return []
 
-        for (const msg of prevHistory) {
-            if (msg.type === 'userMessage') await this.chatHistory.addUserMessage(msg.message)
-            else if (msg.type === 'apiMessage') await this.chatHistory.addAIChatMessage(msg.message)
+        const chatMessage = await this.appDataSource.getRepository(this.databaseEntities['ChatMessage']).find({
+            where: {
+                sessionId: overrideSessionId,
+                chatflowid: this.chatflowid
+            },
+            order: {
+                createdDate: 'ASC'
+            }
+        })
+
+        if (returnBaseMessages) {
+            return mapChatMessageToBaseMessage(chatMessage)
         }
 
-        const memoryResult = await this.loadMemoryVariables({})
-        const baseMessages = memoryResult[this.memoryKey ?? 'chat_history']
-        return returnBaseMessages ? baseMessages : convertBaseMessagetoIMessage(baseMessages)
+        let returnIMessages: IMessage[] = []
+        for (const m of chatMessage) {
+            returnIMessages.push({
+                message: m.content as string,
+                type: m.role
+            })
+        }
+        return returnIMessages
     }
 
     async addChatMessages(): Promise<void> {
-        // adding chat messages will be done on the fly in getChatMessages()
+        // adding chat messages is done on server level
         return
     }
 
     async clearChatMessages(): Promise<void> {
-        await this.clear()
+        // clearing chat messages is done on server level
+        return
     }
 }
 

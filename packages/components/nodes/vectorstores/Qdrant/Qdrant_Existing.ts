@@ -1,9 +1,9 @@
-import { ICommonObject, INode, INodeData, INodeOutputsValue, INodeParams } from '../../../src/Interface'
 import { QdrantClient } from '@qdrant/js-client-rest'
-import { QdrantVectorStore, QdrantLibArgs } from 'langchain/vectorstores/qdrant'
-import { Embeddings } from 'langchain/embeddings/base'
+import { QdrantVectorStore, QdrantLibArgs } from '@langchain/community/vectorstores/qdrant'
+import { Embeddings } from '@langchain/core/embeddings'
+import { VectorStoreRetrieverInput } from '@langchain/core/vectorstores'
 import { getBaseClasses, getCredentialData, getCredentialParam } from '../../../src/utils'
-import { VectorStoreRetrieverInput } from 'langchain/vectorstores/base'
+import { ICommonObject, INode, INodeData, INodeOutputsValue, INodeParams } from '../../../src/Interface'
 
 type RetrieverConfig = Partial<VectorStoreRetrieverInput<QdrantVectorStore>>
 
@@ -182,6 +182,9 @@ class Qdrant_Existing_VectorStores implements INode {
             return retriever
         } else if (output === 'vectorStore') {
             ;(vectorStore as any).k = k
+            if (queryFilter) {
+                ;(vectorStore as any).filter = retrieverConfig.filter
+            }
             return vectorStore
         }
         return vectorStore
