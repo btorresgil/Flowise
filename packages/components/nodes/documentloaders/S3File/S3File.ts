@@ -1,13 +1,13 @@
 import { omit } from 'lodash'
 import { ICommonObject, INode, INodeData, INodeOptionsValue, INodeParams } from '../../../src/Interface'
-import { S3Loader } from 'langchain/document_loaders/web/s3'
+import { S3Loader } from '@langchain/community/document_loaders/web/s3'
 import {
     UnstructuredLoader,
     UnstructuredLoaderOptions,
     UnstructuredLoaderStrategy,
     SkipInferTableTypes,
     HiResModelName
-} from 'langchain/document_loaders/fs/unstructured'
+} from '@langchain/community/document_loaders/fs/unstructured'
 import { getCredentialData, getCredentialParam } from '../../../src/utils'
 import { S3Client, GetObjectCommand, S3ClientConfig } from '@aws-sdk/client-s3'
 import { getRegions, MODEL_TYPE } from '../../../src/modelLoader'
@@ -70,7 +70,8 @@ class S3_DocumentLoaders implements INode {
                 description:
                     'Your Unstructured.io URL. Read <a target="_blank" href="https://unstructured-io.github.io/unstructured/introduction.html#getting-started">more</a> on how to get started',
                 type: 'string',
-                default: 'http://localhost:8000/general/v0/general'
+                placeholder: process.env.UNSTRUCTURED_API_URL || 'http://localhost:8000/general/v0/general',
+                optional: !!process.env.UNSTRUCTURED_API_URL
             },
             {
                 label: 'Unstructured API KEY',

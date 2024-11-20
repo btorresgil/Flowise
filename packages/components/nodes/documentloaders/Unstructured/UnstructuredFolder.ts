@@ -6,7 +6,7 @@ import {
     UnstructuredLoaderStrategy,
     SkipInferTableTypes,
     HiResModelName
-} from 'langchain/document_loaders/fs/unstructured'
+} from '@langchain/community/document_loaders/fs/unstructured'
 import { getCredentialData, getCredentialParam } from '../../../src/utils'
 
 class UnstructuredFolder_DocumentLoaders implements INode {
@@ -51,7 +51,8 @@ class UnstructuredFolder_DocumentLoaders implements INode {
                 description:
                     'Unstructured API URL. Read <a target="_blank" href="https://unstructured-io.github.io/unstructured/introduction.html#getting-started">more</a> on how to get started',
                 type: 'string',
-                default: 'http://localhost:8000/general/v0/general'
+                placeholder: process.env.UNSTRUCTURED_API_URL || 'http://localhost:8000/general/v0/general',
+                optional: !!process.env.UNSTRUCTURED_API_URL
             },
             {
                 label: 'Strategy',

@@ -24,6 +24,7 @@ import useApi from '@/hooks/useApi'
 
 // utils
 import useNotifier from '@/utils/useNotifier'
+import { initializeDefaultNodeData } from '@/utils/genericHelper'
 
 // const
 import { baseURL, REDACTED_CREDENTIAL_VALUE } from '@/store/constant'
@@ -71,14 +72,14 @@ const AddEditCredentialDialog = ({ show, dialogProps, onCancel, onConfirm, setEr
     }, [getSpecificComponentCredentialApi.data])
 
     useEffect(() => {
-        if (getSpecificCredentialApi.error) {
+        if (getSpecificCredentialApi.error && setError) {
             setError(getSpecificCredentialApi.error)
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [getSpecificCredentialApi.error])
 
     useEffect(() => {
-        if (getSpecificComponentCredentialApi.error) {
+        if (getSpecificComponentCredentialApi.error && setError) {
             setError(getSpecificComponentCredentialApi.error)
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -95,7 +96,8 @@ const AddEditCredentialDialog = ({ show, dialogProps, onCancel, onConfirm, setEr
             // When credential dialog is to add a new credential
             setName('')
             setCredential({})
-            setCredentialData({})
+            const defaultCredentialData = initializeDefaultNodeData(dialogProps.credentialComponent.inputs)
+            setCredentialData(defaultCredentialData)
             setComponentCredential(dialogProps.credentialComponent)
         }
 
@@ -132,7 +134,7 @@ const AddEditCredentialDialog = ({ show, dialogProps, onCancel, onConfirm, setEr
                 onConfirm(createResp.data.id)
             }
         } catch (error) {
-            setError(error)
+            if (setError) setError(error)
             enqueueSnackbar({
                 message: `Failed to add new Credential: ${
                     typeof error.response.data === 'object' ? error.response.data.message : error.response.data
@@ -184,7 +186,7 @@ const AddEditCredentialDialog = ({ show, dialogProps, onCancel, onConfirm, setEr
                 onConfirm(saveResp.data.id)
             }
         } catch (error) {
-            setError(error)
+            if (setError) setError(error)
             enqueueSnackbar({
                 message: `Failed to save Credential: ${
                     typeof error.response.data === 'object' ? error.response.data.message : error.response.data
